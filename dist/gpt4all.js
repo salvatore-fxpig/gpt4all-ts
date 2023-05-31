@@ -14,7 +14,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
     function verb(n) { return function (v) { return step([n, v]); }; }
     function step(op) {
         if (f) throw new TypeError("Generator is already executing.");
-        while (g && (g = 0, op[0] && (_ = 0)), _) try {
+        while (_) try {
             if (f = 1, y && (t = op[0] & 2 ? y["return"] : op[0] ? y["throw"] || ((t = y["return"]) && t.call(y), 0) : y.next) && !(t = t.call(y, op[1])).done) return t;
             if (y = 0, t) op = [op[0] & 2, t.value];
             switch (op[0]) {
@@ -43,11 +43,12 @@ var fs = require("fs");
 var os = require("os");
 var axios_1 = require("axios");
 var ProgressBar = require("progress");
+var stream_1 = require("stream");
 var GPT4All = /** @class */ (function () {
-    function GPT4All(model, forceDownload, decoderConfig) {
+    function GPT4All(model, decoderConfig, basePath) {
         if (model === void 0) { model = 'gpt4all-lora-quantized'; }
-        if (forceDownload === void 0) { forceDownload = false; }
         if (decoderConfig === void 0) { decoderConfig = {}; }
+        if (basePath === void 0) { basePath = os.homedir() + "/.nomic"; }
         this.bot = null;
         this.model = model;
         this.decoderConfig = decoderConfig;
@@ -60,10 +61,11 @@ var GPT4All = /** @class */ (function () {
         */
         if ('gpt4all-lora-quantized' !== model &&
             'gpt4all-lora-unfiltered-quantized' !== model) {
-            throw new Error("Model ".concat(model, " is not supported. Current models supported are: \n                gpt4all-lora-quantized\n                gpt4all-lora-unfiltered-quantized"));
+            throw new Error("Model " + model + " is not supported. Current models supported are: \n                gpt4all-lora-quantized\n                gpt4all-lora-unfiltered-quantized");
         }
-        this.executablePath = "".concat(os.homedir(), "/.nomic/gpt4all");
-        this.modelPath = "".concat(os.homedir(), "/.nomic/").concat(model, ".bin");
+        this.basePath = basePath;
+        this.executablePath = basePath + "/gpt4all";
+        this.modelPath = basePath + "/" + model + ".bin";
     }
     GPT4All.prototype.init = function (forceDownload) {
         if (forceDownload === void 0) { forceDownload = false; }
@@ -100,7 +102,7 @@ var GPT4All = /** @class */ (function () {
                         spawnArgs = [this.executablePath, '--model', this.modelPath];
                         for (_i = 0, _a = Object.entries(this.decoderConfig); _i < _a.length; _i++) {
                             _b = _a[_i], key = _b[0], value = _b[1];
-                            spawnArgs.push("--".concat(key), value.toString());
+                            spawnArgs.push("--" + key, value.toString());
                         }
                         this.bot = (0, child_process_1.spawn)(spawnArgs[0], spawnArgs.slice(1), { stdio: ['pipe', 'pipe', 'ignore'] });
                         // wait for the bot to be ready
@@ -132,6 +134,7 @@ var GPT4All = /** @class */ (function () {
             return __generator(this, function (_a) {
                 switch (_a.label) {
                     case 0:
+                        console.log("downloading executable");
                         platform = os.platform();
                         if (!(platform === 'darwin')) return [3 /*break*/, 2];
                         return [4 /*yield*/, (0, util_1.promisify)(child_process_1.exec)('uname -m')];
@@ -152,20 +155,16 @@ var GPT4All = /** @class */ (function () {
                             upstream = 'https://github.com/nomic-ai/gpt4all/blob/main/chat/gpt4all-lora-quantized-win64.exe?raw=true';
                         }
                         else {
-                            throw new Error("Your platform is not supported: ".concat(platform, ". Current binaries supported are for OSX (ARM and Intel), Linux and Windows."));
+                            throw new Error("Your platform is not supported: " + platform + ". Current binaries supported are for OSX (ARM and Intel), Linux and Windows.");
                         }
                         _a.label = 3;
                     case 3: return [4 /*yield*/, this.downloadFile(upstream, this.executablePath)];
                     case 4:
                         _a.sent();
-                        return [4 /*yield*/, fs.chmod(this.executablePath, 493, function (err) {
-                                if (err) {
-                                    throw err;
-                                }
-                            })];
+                        return [4 /*yield*/, fs.promises.chmod(this.executablePath, 493)];
                     case 5:
                         _a.sent();
-                        console.log("File downloaded successfully to ".concat(this.executablePath));
+                        console.log("File downloaded successfully to " + this.executablePath);
                         return [2 /*return*/];
                 }
             });
@@ -177,11 +176,12 @@ var GPT4All = /** @class */ (function () {
             return __generator(this, function (_a) {
                 switch (_a.label) {
                     case 0:
-                        modelUrl = "https://the-eye.eu/public/AI/models/nomic-ai/gpt4all/".concat(this.model, ".bin");
+                        console.log("downloading model");
+                        modelUrl = "https://the-eye.eu/public/AI/models/nomic-ai/gpt4all/" + this.model + ".bin";
                         return [4 /*yield*/, this.downloadFile(modelUrl, this.modelPath)];
                     case 1:
                         _a.sent();
-                        console.log("File downloaded successfully to ".concat(this.modelPath));
+                        console.log("File downloaded successfully to " + this.modelPath);
                         return [2 /*return*/];
                 }
             });
@@ -189,7 +189,7 @@ var GPT4All = /** @class */ (function () {
     };
     GPT4All.prototype.downloadFile = function (url, destination) {
         return __awaiter(this, void 0, void 0, function () {
-            var _a, data, headers, totalSize, progressBar, dir, writer;
+            var _a, data, headers, totalSize, progressBar, dir, totalProgress, updateProgress, writer;
             return __generator(this, function (_b) {
                 switch (_b.label) {
                     case 0: return [4 /*yield*/, axios_1["default"].get(url, { responseType: 'stream' })];
@@ -202,17 +202,22 @@ var GPT4All = /** @class */ (function () {
                             width: 20,
                             total: totalSize
                         });
-                        dir = new URL("file://".concat(os.homedir(), "/.nomic/"));
-                        return [4 /*yield*/, fs.mkdir(dir, { recursive: true }, function (err) {
-                                if (err) {
-                                    throw err;
-                                }
-                            })];
+                        dir = new URL("file://" + this.basePath + "/");
+                        return [4 /*yield*/, fs.promises.mkdir(dir, { recursive: true })];
                     case 2:
                         _b.sent();
+                        totalProgress = 0;
+                        updateProgress = function (addSize) {
+                            var newProgress = totalProgress + addSize;
+                            var pct = (newProgress / totalSize).toFixed(1);
+                            if (pct != (totalProgress / totalSize).toFixed(1))
+                                console.log(+pct * 100 + "% done");
+                            totalProgress = newProgress;
+                        };
                         writer = fs.createWriteStream(destination);
                         data.on('data', function (chunk) {
                             progressBar.tick(chunk.length);
+                            updateProgress(chunk.length);
                         });
                         data.pipe(writer);
                         return [2 /*return*/, new Promise(function (resolve, reject) {
@@ -229,7 +234,35 @@ var GPT4All = /** @class */ (function () {
             throw new Error("Bot is not initialized.");
         }
         this.bot.stdin.write(prompt + "\n");
-        return new Promise(function (resolve, reject) {
+        var buffer = [];
+        var finished = false;
+        var errored = false;
+        var stream = new stream_1.Readable({
+            read: function () {
+                return __awaiter(this, void 0, void 0, function () {
+                    return __generator(this, function (_a) {
+                        switch (_a.label) {
+                            case 0:
+                                if (errored)
+                                    return [2 /*return*/, this.push(null)];
+                                if (finished && !buffer.length)
+                                    return [2 /*return*/, this.push(null)];
+                                _a.label = 1;
+                            case 1:
+                                if (!!buffer.length) return [3 /*break*/, 3];
+                                return [4 /*yield*/, new Promise(function (resolve) { return setTimeout(resolve, 50); })];
+                            case 2:
+                                _a.sent();
+                                return [3 /*break*/, 1];
+                            case 3:
+                                this.push(buffer.shift());
+                                return [2 /*return*/];
+                        }
+                    });
+                });
+            }
+        });
+        var promise = new Promise(function (resolve, reject) {
             var response = "";
             var timeoutId;
             var onStdoutData = function (data) {
@@ -248,17 +281,26 @@ var GPT4All = /** @class */ (function () {
                     }, 4000); // Set a timeout of 4000ms to wait for more data
                 }
                 // console.log('Received text:', text); // Debug log: Show the received text
+                buffer.push(text);
+                // console.log(stream.readable)
+                // if (!stream.readable) {
+                //     stream.emit("readable")
+                //     stream.readable = true;
+                // }
                 response += text;
                 // console.log('Updated response:', response); // Debug log: Show the updated response
             };
             var onStdoutError = function (err) {
                 _this.bot.stdout.removeListener("data", onStdoutData);
                 _this.bot.stdout.removeListener("error", onStdoutError);
+                stream.emit("error", err);
+                finished = true;
                 reject(err);
             };
             var terminateAndResolve = function (finalResponse) {
                 _this.bot.stdout.removeListener("data", onStdoutData);
                 _this.bot.stdout.removeListener("error", onStdoutError);
+                finished = true;
                 // check for > at the end and remove it
                 if (finalResponse.endsWith(">")) {
                     finalResponse = finalResponse.slice(0, -1);
@@ -268,6 +310,7 @@ var GPT4All = /** @class */ (function () {
             _this.bot.stdout.on("data", onStdoutData);
             _this.bot.stdout.on("error", onStdoutError);
         });
+        return Object.assign(stream, promise);
     };
     return GPT4All;
 }());
